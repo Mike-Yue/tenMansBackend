@@ -2,6 +2,8 @@ package db
 
 import (
 	"embed"
+	"errors"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,11 +17,11 @@ var seedFS embed.FS
 // the schema and initial data; on every later deploy the existing live data on
 // the disk is left untouched.
 func EnsureSeeded(dstPath string) error {
-	// if _, err := os.Stat(dstPath); err == nil {
-	// 	return nil // already present — keep live data
-	// } else if !errors.Is(err, fs.ErrNotExist) {
-	// 	return err // a real error (permissions, bad path, ...)
-	// }
+	if _, err := os.Stat(dstPath); err == nil {
+		return nil // already present — keep live data
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err // a real error (permissions, bad path, ...)
+	}
 
 	if dir := filepath.Dir(dstPath); dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
