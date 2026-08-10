@@ -6,6 +6,7 @@ import (
 
 	"tenMansBackend/db"
 	"tenMansBackend/matches"
+	"tenMansBackend/stats"
 	"tenMansBackend/users"
 )
 
@@ -28,6 +29,11 @@ func main() {
 	matchSvc := matches.NewMatchService(matchRepo)
 	matchHandler := matches.NewMatchHandler(matchSvc)
 	matchHandler.RegisterRoutes(mux)
+
+	statsRepo := stats.NewStatsRepository(database)
+	statsSvc := stats.NewStatsService(statsRepo)
+	statsHandler := stats.NewStatsHandler(statsSvc)
+	statsHandler.RegisterRoutes(mux)
 
 	server := &http.Server{
 		Addr:    ":8080",

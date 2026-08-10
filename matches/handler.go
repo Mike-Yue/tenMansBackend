@@ -2,7 +2,6 @@ package matches
 
 import (
 	"encoding/json"
-	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -36,6 +35,65 @@ func toResponse(m Match) MatchResponse {
 	}
 }
 
+// MatchDetailResponse is the API DTO for GET /api/matches/{matchId}: the base
+// match fields plus each team and its players' scoreboard.
+type MatchDetailResponse struct {
+	MatchResponse
+	Teams []TeamResponse `json:"teams"`
+}
+
+type TeamResponse struct {
+	ID           int64                `json:"id"`
+	TeamSlot     string               `json:"teamSlot"`
+	StartingSide string               `json:"startingSide"`
+	RoundsWon    int64                `json:"roundsWon"`
+	Result       string               `json:"result"`
+	Players      []PlayerStatResponse `json:"players"`
+}
+
+type PlayerStatResponse struct {
+	PlayerID      int64   `json:"playerId"`
+	SteamID       int64   `json:"steamId"`
+	SteamUsername *string `json:"steamUsername"`
+	Kills         int64   `json:"kills"`
+	Deaths        int64   `json:"deaths"`
+	Assists       int64   `json:"assists"`
+	KDRatio       float64 `json:"kdRatio"`
+	MVPs          int64   `json:"mvps"`
+}
+
+// toDetailResponse maps the MatchDetail domain model onto its API DTO.
+func toDetailResponse(d MatchDetail) MatchDetailResponse {
+	teams := make([]TeamResponse, 0, len(d.Teams))
+	for _, t := range d.Teams {
+		players := make([]PlayerStatResponse, 0, len(t.Players))
+		for _, p := range t.Players {
+			players = append(players, PlayerStatResponse{
+				PlayerID:      p.PlayerID,
+				SteamID:       p.SteamID,
+				SteamUsername: p.SteamUsername,
+				Kills:         p.Kills,
+				Deaths:        p.Deaths,
+				Assists:       p.Assists,
+				KDRatio:       p.KDRatio,
+				MVPs:          p.MVPs,
+			})
+		}
+		teams = append(teams, TeamResponse{
+			ID:           t.ID,
+			TeamSlot:     t.TeamSlot,
+			StartingSide: t.StartingSide,
+			RoundsWon:    t.RoundsWon,
+			Result:       t.Result,
+			Players:      players,
+		})
+	}
+	return MatchDetailResponse{
+		MatchResponse: toResponse(d.Match),
+		Teams:         teams,
+	}
+}
+
 // MatchHandler translates HTTP requests into service calls for the matches domain.
 type MatchHandler struct {
 	svc MatchService
@@ -49,7 +107,26 @@ func NewMatchHandler(svc MatchService) *MatchHandler {
 // RegisterRoutes wires the matches endpoints onto the given mux.
 func (h *MatchHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/matches", h.ListMatches)
+	mux.HandleFunc("POST /api/matches", h.CreateMatch)
 	mux.HandleFunc("GET /api/matches/{matchId}", h.GetMatch)
+}
+
+// CreateMatch handles POST /api/matches. Eventually this will accept a demo
+// upload reference and kick off parsing; for now it fabricates a random match
+// from the existing players and returns it with 201 Created.
+func (h *MatchHandler) CreateMatch(w http.ResponseWriter, r *http.Request) {
+	match, err := h.svc.CreateMatch(r.Context())
+	if err != nil {
+		log.Printf("create match: %v", err)
+		http.Error(w, "failed to create match", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(toResponse(*match)); err != nil {
+		log.Printf("encode match: %v", err)
+	}
 }
 
 // ListMatches handles GET /api/matches?season={id}. The season query param is
@@ -88,10 +165,6 @@ func (h *MatchHandler) GetMatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	match, err := h.svc.GetMatch(r.Context(), id)
-	if errors.Is(err, errNotImplemented) {
-		http.Error(w, "not implemented", http.StatusNotImplemented)
-		return
-	}
 	if err != nil {
 		log.Printf("get match %d: %v", id, err)
 		http.Error(w, "failed to get match", http.StatusInternalServerError)
@@ -102,7 +175,7 @@ func (h *MatchHandler) GetMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, toResponse(*match))
+	writeJSON(w, toDetailResponse(*match))
 }
 
 // writeJSON encodes v as a JSON response body.

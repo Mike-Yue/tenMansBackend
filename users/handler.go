@@ -2,7 +2,6 @@ package users
 
 import (
 	"encoding/json"
-	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -46,10 +45,6 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, err := h.svc.GetUserBySteamID(r.Context(), steamID)
-	if errors.Is(err, errNotImplemented) {
-		http.Error(w, "not implemented", http.StatusNotImplemented)
-		return
-	}
 	if err != nil {
 		log.Printf("get user %d: %v", steamID, err)
 		http.Error(w, "failed to get user", http.StatusInternalServerError)

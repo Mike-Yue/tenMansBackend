@@ -6,10 +6,6 @@ import (
 	"errors"
 )
 
-// errNotImplemented marks a repository method that is scaffolded but not yet
-// wired to real SQL. Handlers translate it into a 501 response.
-var errNotImplemented = errors.New("not implemented")
-
 // UserRepository is the persistence seam for users. The service layer depends
 // on this interface, not on the concrete implementation, so it can be mocked
 // in tests.
@@ -54,8 +50,17 @@ func (r *sqlUserRepository) List(ctx context.Context) ([]User, error) {
 }
 
 func (r *sqlUserRepository) GetBySteamID(ctx context.Context, steamID int64) (*User, error) {
-	// TODO: SELECT id, steam_id, steam_username, created_at FROM Users
-	//       WHERE steam_id = ?  — scan a single row, and return (nil, nil) on
-	//       sql.ErrNoRows so the handler can respond 404.
-	return nil, errNotImplemented
+	var u User
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, steam_id, steam_username, created_at FROM Users WHERE steam_id = ?`,
+		steamID,
+	).Scan(&u.ID, &u.SteamID, &u.SteamUsername, &u.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &u, nil
 }
