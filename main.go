@@ -60,7 +60,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:    ":" + port,
-		Handler: mux,
+		Handler: corsMiddleware(mux),
 	}
 
 	log.Printf("Server listening on :%s", port)
