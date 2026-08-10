@@ -4,7 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 )
+
+// matchColumns is the shared column list for reading a full match row.
+const matchColumns = `id, map, played_at, uploaded_at, upload_hash, status, season_id, total_rounds, created_at, storage_key`
 
 // MatchRepository is the persistence seam for matches. The service layer depends
 // on this interface, not on the concrete implementation, so it can be mocked in
@@ -16,11 +20,25 @@ type MatchRepository interface {
 	// GetDetailByID returns a match with its teams and every player's stats.
 	// Returns (nil, nil) when no such match exists.
 	GetDetailByID(ctx context.Context, id int64) (*MatchDetail, error)
-	// ListPlayerIDs returns the primary keys of every user, used to assign
-	// players to a newly created match.
+	// FindByHash returns the match with the given upload hash, or (nil, nil) if
+	// none exists — used for dedup at upload time.
+	FindByHash(ctx context.Context, uploadHash string) (*Match, error)
+	// CurrentSeasonID returns the season active now, falling back to the latest.
+	CurrentSeasonID(ctx context.Context) (int64, error)
+	// CreatePending inserts a new match in the 'pending' state (before upload).
+	CreatePending(ctx context.Context, uploadHash, storageKey string, seasonID int64) (*Match, error)
+	// MarkUploaded flips a match to 'uploaded' and stamps uploaded_at. The bool
+	// reports whether a matching row existed.
+	MarkUploaded(ctx context.Context, id int64) (bool, error)
+	// CompleteFromParse fills a match from parser output and inserts its teams +
+	// stats, all in one transaction, setting status to 'processed'. The bool
+	// reports whether a matching row existed.
+	CompleteFromParse(ctx context.Context, id int64, pr ParseResult) (bool, error)
+	// ListPlayerIDs returns the primary keys of every user, used by the random
+	// generator to assign players to a match.
 	ListPlayerIDs(ctx context.Context) ([]int64, error)
-	// Create persists a match, its teams, and every player stat line in a single
-	// transaction, returning the created match with its assigned ID.
+	// Create persists a fully formed (random) match and its teams/stats in one
+	// transaction, returning the created match.
 	Create(ctx context.Context, nm NewMatch) (*Match, error)
 }
 
@@ -34,14 +52,22 @@ func NewMatchRepository(db *sql.DB) MatchRepository {
 	return &sqlMatchRepository{db: db}
 }
 
+// scanMatch scans a full match row (matchColumns order) from a Scanner.
+func scanMatch(s interface{ Scan(...any) error }) (Match, error) {
+	var m Match
+	err := s.Scan(
+		&m.ID, &m.Map, &m.PlayedAt, &m.UploadedAt, &m.UploadHash,
+		&m.Status, &m.SeasonID, &m.TotalRounds, &m.CreatedAt, &m.StorageKey,
+	)
+	return m, err
+}
+
 func (r *sqlMatchRepository) List(ctx context.Context, seasonID *int64) ([]Match, error) {
 	// TODO: when seasonID != nil, append "WHERE season_id = ?" and pass the
 	//       value as a query arg. For now this returns all matches regardless.
 	_ = seasonID
 
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, map, played_at, uploaded_at, upload_hash, processed, season_id, total_rounds
-		 FROM Matches`)
+	rows, err := r.db.QueryContext(ctx, `SELECT `+matchColumns+` FROM matches`)
 	if err != nil {
 		return nil, err
 	}
@@ -49,17 +75,8 @@ func (r *sqlMatchRepository) List(ctx context.Context, seasonID *int64) ([]Match
 
 	matches := make([]Match, 0)
 	for rows.Next() {
-		var m Match
-		if err := rows.Scan(
-			&m.ID,
-			&m.Map,
-			&m.PlayedAt,
-			&m.UploadedAt,
-			&m.UploadHash,
-			&m.Processed,
-			&m.SeasonID,
-			&m.TotalRounds,
-		); err != nil {
+		m, err := scanMatch(rows)
+		if err != nil {
 			return nil, err
 		}
 		matches = append(matches, m)
@@ -71,12 +88,108 @@ func (r *sqlMatchRepository) List(ctx context.Context, seasonID *int64) ([]Match
 	return matches, nil
 }
 
-func (r *sqlMatchRepository) GetDetailByID(ctx context.Context, id int64) (*MatchDetail, error) {
-	var m Match
+func (r *sqlMatchRepository) FindByHash(ctx context.Context, uploadHash string) (*Match, error) {
+	m, err := scanMatch(r.db.QueryRowContext(ctx,
+		`SELECT `+matchColumns+` FROM matches WHERE upload_hash = ?`, uploadHash))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+func (r *sqlMatchRepository) CurrentSeasonID(ctx context.Context) (int64, error) {
+	today := time.Now().Format("2006-01-02")
+
+	var id int64
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, map, played_at, uploaded_at, upload_hash, processed, season_id, total_rounds
-		 FROM Matches WHERE id = ?`, id).
-		Scan(&m.ID, &m.Map, &m.PlayedAt, &m.UploadedAt, &m.UploadHash, &m.Processed, &m.SeasonID, &m.TotalRounds)
+		`SELECT id FROM seasons WHERE start_at <= ? AND end_at >= ? ORDER BY id DESC LIMIT 1`,
+		today, today).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		// No season covers today; fall back to the most recent one.
+		err = r.db.QueryRowContext(ctx,
+			`SELECT id FROM seasons ORDER BY id DESC LIMIT 1`).Scan(&id)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func (r *sqlMatchRepository) CreatePending(ctx context.Context, uploadHash, storageKey string, seasonID int64) (*Match, error) {
+	now := time.Now().Format(time.RFC3339)
+	res, err := r.db.ExecContext(ctx,
+		`INSERT INTO matches (upload_hash, status, season_id, created_at, storage_key)
+		 VALUES (?, 'pending', ?, ?, ?)`,
+		uploadHash, seasonID, now, storageKey)
+	if err != nil {
+		return nil, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Match{
+		ID:         id,
+		UploadHash: uploadHash,
+		Status:     "pending",
+		SeasonID:   seasonID,
+		CreatedAt:  &now,
+		StorageKey: storageKey,
+	}, nil
+}
+
+func (r *sqlMatchRepository) MarkUploaded(ctx context.Context, id int64) (bool, error) {
+	now := time.Now().Format(time.RFC3339)
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE matches SET status = 'uploaded', uploaded_at = ? WHERE id = ?`, now, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func (r *sqlMatchRepository) CompleteFromParse(ctx context.Context, id int64, pr ParseResult) (bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx,
+		`UPDATE matches SET map = ?, played_at = ?, total_rounds = ?, status = 'processed' WHERE id = ?`,
+		pr.Map, pr.PlayedAt, pr.TotalRounds, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if n == 0 {
+		return false, nil // no such match
+	}
+
+	if err := insertTeamsAndStats(ctx, tx, id, pr.Teams); err != nil {
+		return false, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (r *sqlMatchRepository) GetDetailByID(ctx context.Context, id int64) (*MatchDetail, error) {
+	m, err := scanMatch(r.db.QueryRowContext(ctx,
+		`SELECT `+matchColumns+` FROM matches WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -112,8 +225,8 @@ func (r *sqlMatchRepository) GetDetailByID(ctx context.Context, id int64) (*Matc
 	statRows, err := r.db.QueryContext(ctx,
 		`SELECT s.team_id, u.id, u.steam_id, u.steam_username,
 		        s.kills, s.deaths, s.assists, s.kd_ratio, s.mvps
-		 FROM Stats s
-		 JOIN Users u ON u.id = s.player_id
+		 FROM stats s
+		 JOIN users u ON u.id = s.player_id
 		 WHERE s.match_id = ?
 		 ORDER BY s.kills DESC`, id)
 	if err != nil {
@@ -141,7 +254,7 @@ func (r *sqlMatchRepository) GetDetailByID(ctx context.Context, id int64) (*Matc
 }
 
 func (r *sqlMatchRepository) ListPlayerIDs(ctx context.Context) ([]int64, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id FROM Users ORDER BY id`)
+	rows, err := r.db.QueryContext(ctx, `SELECT id FROM users ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -167,14 +280,14 @@ func (r *sqlMatchRepository) Create(ctx context.Context, nm NewMatch) (*Match, e
 	if err != nil {
 		return nil, err
 	}
-	// Rolled back automatically if we return before Commit; a no-op afterwards.
 	defer tx.Rollback()
 
-	// The match is fully "processed" since we already have its stats.
+	now := time.Now().Format(time.RFC3339)
+	// A generated match is already fully known, so it goes straight to 'processed'.
 	res, err := tx.ExecContext(ctx,
-		`INSERT INTO Matches (map, played_at, uploaded_at, upload_hash, processed, season_id, total_rounds)
-		 VALUES (?, ?, ?, ?, 1, ?, ?)`,
-		nm.Map, nm.PlayedAt, nm.UploadedAt, nm.UploadHash, nm.SeasonID, nm.TotalRounds)
+		`INSERT INTO matches (map, played_at, uploaded_at, upload_hash, status, season_id, total_rounds, created_at, storage_key)
+		 VALUES (?, ?, ?, ?, 'processed', ?, ?, ?, ?)`,
+		nm.Map, nm.PlayedAt, nm.UploadedAt, nm.UploadHash, nm.SeasonID, nm.TotalRounds, now, nm.StorageKey)
 	if err != nil {
 		return nil, err
 	}
@@ -183,27 +296,8 @@ func (r *sqlMatchRepository) Create(ctx context.Context, nm NewMatch) (*Match, e
 		return nil, err
 	}
 
-	for _, team := range nm.Teams {
-		teamRes, err := tx.ExecContext(ctx,
-			`INSERT INTO match_teams (match_id, team_slot, starting_side, rounds_won, result)
-			 VALUES (?, ?, ?, ?, ?)`,
-			matchID, team.TeamSlot, team.StartingSide, team.RoundsWon, team.Result)
-		if err != nil {
-			return nil, err
-		}
-		teamID, err := teamRes.LastInsertId()
-		if err != nil {
-			return nil, err
-		}
-
-		for _, p := range team.Players {
-			if _, err := tx.ExecContext(ctx,
-				`INSERT INTO Stats (match_id, team_id, player_id, kills, deaths, assists, kd_ratio, mvps)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-				matchID, teamID, p.PlayerID, p.Kills, p.Deaths, p.Assists, p.KDRatio, p.MVPs); err != nil {
-				return nil, err
-			}
-		}
+	if err := insertTeamsAndStats(ctx, tx, matchID, nm.Teams); err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -212,12 +306,42 @@ func (r *sqlMatchRepository) Create(ctx context.Context, nm NewMatch) (*Match, e
 
 	return &Match{
 		ID:          matchID,
-		Map:         nm.Map,
-		PlayedAt:    nm.PlayedAt,
-		UploadedAt:  nm.UploadedAt,
+		Map:         &nm.Map,
+		PlayedAt:    &nm.PlayedAt,
+		UploadedAt:  &nm.UploadedAt,
 		UploadHash:  nm.UploadHash,
-		Processed:   true,
+		Status:      "processed",
 		SeasonID:    nm.SeasonID,
-		TotalRounds: nm.TotalRounds,
+		TotalRounds: &nm.TotalRounds,
+		CreatedAt:   &now,
+		StorageKey:  nm.StorageKey,
 	}, nil
+}
+
+// insertTeamsAndStats inserts both teams and each team's player stats for a match
+// within the given transaction. Shared by Create and CompleteFromParse.
+func insertTeamsAndStats(ctx context.Context, tx *sql.Tx, matchID int64, teams []NewTeam) error {
+	for _, team := range teams {
+		teamRes, err := tx.ExecContext(ctx,
+			`INSERT INTO match_teams (match_id, team_slot, starting_side, rounds_won, result)
+			 VALUES (?, ?, ?, ?, ?)`,
+			matchID, team.TeamSlot, team.StartingSide, team.RoundsWon, team.Result)
+		if err != nil {
+			return err
+		}
+		teamID, err := teamRes.LastInsertId()
+		if err != nil {
+			return err
+		}
+
+		for _, p := range team.Players {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO stats (match_id, team_id, player_id, kills, deaths, assists, kd_ratio, mvps)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				matchID, teamID, p.PlayerID, p.Kills, p.Deaths, p.Assists, p.KDRatio, p.MVPs); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

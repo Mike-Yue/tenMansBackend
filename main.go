@@ -43,7 +43,7 @@ func main() {
 	userHandler.RegisterRoutes(mux)
 
 	matchRepo := matches.NewMatchRepository(database)
-	matchSvc := matches.NewMatchService(matchRepo)
+	matchSvc := matches.NewMatchService(matchRepo, matches.NewStubPresigner())
 	matchHandler := matches.NewMatchHandler(matchSvc)
 	matchHandler.RegisterRoutes(mux)
 

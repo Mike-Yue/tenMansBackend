@@ -51,6 +51,7 @@ func generateRandomMatch(playerIDs []int64) NewMatch {
 		PlayedAt:    now,
 		UploadedAt:  now,
 		UploadHash:  randomHash(),
+		StorageKey:  "random/" + randomHash() + ".dem",
 		SeasonID:    1,
 		TotalRounds: aRounds + bRounds,
 		Teams: []NewTeam{

@@ -1,33 +1,42 @@
 package matches
 
-// Match is the DB model: it mirrors a row in the "Matches" table and is used
-// only by the data and service layers. It intentionally carries no json tags —
-// how a match is exposed over the API is the handler's concern (see
-// MatchResponse in handler.go).
+// Match is the DB model: it mirrors a row in the "matches" table and is used
+// only by the data and service layers.
 //
-// All columns are NOT NULL, so no pointer fields are needed. The processed
-// column is stored as an INTEGER 0/1 and represented here as a bool.
+// A match is created before it's parsed, so most metadata is filled in later:
+// Map, PlayedAt, UploadedAt and TotalRounds are nullable (pointers) and remain
+// nil until the corresponding lifecycle step. Status tracks that lifecycle.
 type Match struct {
 	ID          int64
-	Map         string
-	PlayedAt    string
-	UploadedAt  string
+	Map         *string
+	PlayedAt    *string
+	UploadedAt  *string
 	UploadHash  string
-	Processed   bool
+	Status      string
 	SeasonID    int64
-	TotalRounds int64
+	TotalRounds *int64
+	CreatedAt   *string
+	StorageKey  string
 }
 
-// NewMatch is the input model for creating a match together with its two teams
-// and every player's stat line. The service builds it (currently with random
-// data standing in for the future demo-parser output) and MatchRepository.Create
-// persists the whole graph in one transaction.
+// NewMatch is the input model for the random generator, which produces a fully
+// formed (already "processed") match in one transaction via Create.
 type NewMatch struct {
 	Map         string
 	PlayedAt    string
 	UploadedAt  string
 	UploadHash  string
+	StorageKey  string
 	SeasonID    int64
+	TotalRounds int64
+	Teams       []NewTeam
+}
+
+// ParseResult is what the parser service reports for a match: the metadata it
+// learned plus both teams' scoreboards. Consumed by CompleteFromParse.
+type ParseResult struct {
+	Map         string
+	PlayedAt    string
 	TotalRounds int64
 	Teams       []NewTeam
 }
