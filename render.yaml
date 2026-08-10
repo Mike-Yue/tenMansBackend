@@ -1,12 +1,13 @@
-# Render Blueprint: a Dockerized Go web service backed by SQLite on a persistent
+# Render Blueprint: a native Go web service backed by SQLite on a persistent
 # disk. The "starter" plan (~$7/mo) is required because free instances cannot
 # have a persistent disk.
 services:
   - type: web
     name: tenmans-backend
-    runtime: docker
+    runtime: go
     plan: starter
-    dockerfilePath: ./Dockerfile
+    buildCommand: go build -tags netgo -ldflags "-s -w" -o app .
+    startCommand: ./app
     healthCheckPath: /healthz
     envVars:
       - key: DB_PATH
