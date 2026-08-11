@@ -45,9 +45,7 @@ Requires **Go 1.26+**.
 go run .
 ```
 
-The server listens on `http://localhost:8080`. On first start it seeds the
-database from the embedded `db/seed.db` (10 players + one season) if the target
-file doesn't already exist, then serves from it.
+The server listens on `http://localhost:8080`.
 
 Try it:
 
@@ -60,23 +58,18 @@ curl -X POST http://localhost:8080/api/matches
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DB_PATH` | `production.db` | Path to the SQLite file. In production this points at a persistent disk (e.g. `/data/production.db`). |
+| `DB_PATH` | `production.db` | Path to the SQLite file.
 | `PORT` | `8080` | Port to listen on. |
 | `CORS_ALLOWED_ORIGINS` | *(unset = allow all)* | Comma-separated list of allowed browser origins, e.g. `https://tenmansfrontend.onrender.com`. |
 
 ## Database & seeding
 
-The schema and initial data live in `db/seed.db`, which is embedded into the
-binary via `//go:embed`. On startup, `db.EnsureSeeded` copies it to `DB_PATH`
-**only if no file exists there** — so a fresh disk gets seeded on first boot while
-existing live data is left untouched on later restarts/deploys.
+It just uses what exists in production.db, so local updates to the file will also update production. Spicy!
 
-The local dev database (`production.db` and its `-wal`/`-shm` sidecars) is
-gitignored; `db/seed.db` is committed.
+## TODO
 
-## Deployment
-
-Deployed to Render as a native **Go web service** on the Starter plan (needed for
-a persistent disk), configured via `render.yaml`: build `go build ... -o app`,
-start `./app`, a 1 GB disk mounted at `/data`, `DB_PATH=/data/production.db`, and
-health check `/healthz`.
+1. Steam ID Login to view the webpage
+2. S3 storage + upload path for demos
+3. Create match parser service (probably Andrew?)
+4. Implement proper DB migration and schema + add development db
+5. Glicko 2 elo system implementation
