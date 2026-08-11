@@ -28,7 +28,6 @@ go.work.sum
 .env
 
 # Local dev SQLite database and WAL sidecars (db/seed.db IS committed).
-/production.db
 /production.db-wal
 /production.db-shm
 
