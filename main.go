@@ -19,9 +19,9 @@ func main() {
 		dbPath = "production.db"
 	}
 
-	if err := db.EnsureSeeded(dbPath); err != nil {
-		log.Fatal(err)
-	}
+	// if err := db.EnsureSeeded(dbPath); err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	database, err := db.Open(dbPath)
 	if err != nil {
