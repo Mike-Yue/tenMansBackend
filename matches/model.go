@@ -4,13 +4,12 @@ package matches
 // only by the data and service layers.
 //
 // A match is created before it's parsed, so most metadata is filled in later:
-// Map, PlayedAt, UploadedAt and TotalRounds are nullable (pointers) and remain
-// nil until the corresponding lifecycle step. Status tracks that lifecycle.
+// Map, PlayedAt and TotalRounds are nullable (pointers) and remain nil until the
+// corresponding lifecycle step. Status tracks that lifecycle.
 type Match struct {
 	ID          int64
 	Map         *string
 	PlayedAt    *string
-	UploadedAt  *string
 	UploadHash  string
 	Status      string
 	SeasonID    int64
@@ -24,7 +23,6 @@ type Match struct {
 type NewMatch struct {
 	Map         string
 	PlayedAt    string
-	UploadedAt  string
 	UploadHash  string
 	StorageKey  string
 	SeasonID    int64
@@ -53,12 +51,18 @@ type NewTeam struct {
 
 // NewPlayerStat is one player's stat line within a team for a single match.
 type NewPlayerStat struct {
-	PlayerID int64
-	Kills    int64
-	Deaths   int64
-	Assists  int64
-	KDRatio  float64
-	MVPs     int64
+	PlayerID      int64
+	Kills         int64
+	Deaths        int64
+	Assists       int64
+	KDRatio       float64
+	MVPs          int64
+	DamageAssists int64
+	FlashAssists  int64
+	HeadshotKills int64
+	TotalDamage   int64
+	UtilityDamage int64
+	RoundsPlayed  int64
 }
 
 // MatchDetail is a match together with its teams and every player's stat line —

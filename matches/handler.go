@@ -17,7 +17,6 @@ type MatchResponse struct {
 	ID          int64   `json:"id"`
 	Map         *string `json:"map"`
 	PlayedAt    *string `json:"playedAt"`
-	UploadedAt  *string `json:"uploadedAt"`
 	Status      string  `json:"status"`
 	SeasonID    int64   `json:"seasonId"`
 	TotalRounds *int64  `json:"totalRounds"`
@@ -30,7 +29,6 @@ func toResponse(m Match) MatchResponse {
 		ID:          m.ID,
 		Map:         m.Map,
 		PlayedAt:    m.PlayedAt,
-		UploadedAt:  m.UploadedAt,
 		Status:      m.Status,
 		SeasonID:    m.SeasonID,
 		TotalRounds: m.TotalRounds,

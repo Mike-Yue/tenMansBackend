@@ -45,23 +45,23 @@ func generateRandomMatch(playerIDs []int64) NewMatch {
 	}
 
 	now := time.Now().Format("2006-01-02")
+	totalRounds := aRounds + bRounds
 
 	return NewMatch{
 		Map:         mapPool[rand.IntN(len(mapPool))],
 		PlayedAt:    now,
-		UploadedAt:  now,
 		UploadHash:  randomHash(),
 		StorageKey:  "random/" + randomHash() + ".dem",
 		SeasonID:    1,
-		TotalRounds: aRounds + bRounds,
+		TotalRounds: totalRounds,
 		Teams: []NewTeam{
-			{TeamSlot: "A", StartingSide: aSide, RoundsWon: aRounds, Result: aResult, Players: randomPlayerStats(teamA)},
-			{TeamSlot: "B", StartingSide: bSide, RoundsWon: bRounds, Result: bResult, Players: randomPlayerStats(teamB)},
+			{TeamSlot: "A", StartingSide: aSide, RoundsWon: aRounds, Result: aResult, Players: randomPlayerStats(teamA, totalRounds)},
+			{TeamSlot: "B", StartingSide: bSide, RoundsWon: bRounds, Result: bResult, Players: randomPlayerStats(teamB, totalRounds)},
 		},
 	}
 }
 
-func randomPlayerStats(playerIDs []int64) []NewPlayerStat {
+func randomPlayerStats(playerIDs []int64, totalRounds int64) []NewPlayerStat {
 	stats := make([]NewPlayerStat, 0, len(playerIDs))
 	for _, id := range playerIDs {
 		kills := int64(rand.IntN(26) + 5)  // 5..30
@@ -70,12 +70,18 @@ func randomPlayerStats(playerIDs []int64) []NewPlayerStat {
 		mvps := int64(rand.IntN(6))        // 0..5
 		kd := math.Round(float64(kills)/float64(deaths)*1000) / 1000
 		stats = append(stats, NewPlayerStat{
-			PlayerID: id,
-			Kills:    kills,
-			Deaths:   deaths,
-			Assists:  assists,
-			KDRatio:  kd,
-			MVPs:     mvps,
+			PlayerID:      id,
+			Kills:         kills,
+			Deaths:        deaths,
+			Assists:       assists,
+			KDRatio:       kd,
+			MVPs:          mvps,
+			HeadshotKills: int64(rand.IntN(int(kills) + 1)),  // 0..kills
+			TotalDamage:   kills*100 + int64(rand.IntN(400)), // ~100 ADR-ish per kill + noise
+			UtilityDamage: int64(rand.IntN(301)),             // 0..300
+			DamageAssists: int64(rand.IntN(9)),               // 0..8
+			FlashAssists:  int64(rand.IntN(6)),               // 0..5
+			RoundsPlayed:  totalRounds,
 		})
 	}
 	return stats

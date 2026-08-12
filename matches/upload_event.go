@@ -88,10 +88,16 @@ type eventPlayer struct {
 }
 
 type eventPlayerStats struct {
-	Kills   int64 `json:"kills"`
-	Deaths  int64 `json:"deaths"`
-	Assists int64 `json:"assists"`
-	MVPs    int64 `json:"mvps"`
+	Kills         int64 `json:"kills"`
+	Deaths        int64 `json:"deaths"`
+	Assists       int64 `json:"assists"`
+	MVPs          int64 `json:"mvps"`
+	DamageAssists int64 `json:"damageAssists"`
+	FlashAssists  int64 `json:"flashAssists"`
+	HeadshotKills int64 `json:"headshotKills"`
+	TotalDamage   int64 `json:"totalDamage"`
+	UtilityDamage int64 `json:"utilityDamage"`
+	RoundsPlayed  int64 `json:"roundsPlayed"`
 }
 
 // Event type discriminators from the contract.
@@ -131,12 +137,18 @@ func (e *parserEvent) toParseResult(resolve userResolver) (ParseResult, error) {
 				return ParseResult{}, err
 			}
 			players = append(players, NewPlayerStat{
-				PlayerID: playerID,
-				Kills:    p.Stats.Kills,
-				Deaths:   p.Stats.Deaths,
-				Assists:  p.Stats.Assists,
-				KDRatio:  kdRatio(p.Stats.Kills, p.Stats.Deaths),
-				MVPs:     p.Stats.MVPs,
+				PlayerID:      playerID,
+				Kills:         p.Stats.Kills,
+				Deaths:        p.Stats.Deaths,
+				Assists:       p.Stats.Assists,
+				KDRatio:       kdRatio(p.Stats.Kills, p.Stats.Deaths),
+				MVPs:          p.Stats.MVPs,
+				DamageAssists: p.Stats.DamageAssists,
+				FlashAssists:  p.Stats.FlashAssists,
+				HeadshotKills: p.Stats.HeadshotKills,
+				TotalDamage:   p.Stats.TotalDamage,
+				UtilityDamage: p.Stats.UtilityDamage,
+				RoundsPlayed:  p.Stats.RoundsPlayed,
 			})
 		}
 		teams = append(teams, NewTeam{

@@ -9,11 +9,11 @@ import (
 
 // Match lifecycle status values stored in the matches.status column. These must
 // stay within the column's CHECK constraint
-// (pending, uploaded, processing, processed, failed).
+// (pending, uploaded, processed, failed).
 const (
-	statusProcessed  = "processed"
-	statusProcessing = "processing"
-	statusFailed     = "failed"
+	statusProcessed = "processed"
+	statusUploaded  = "uploaded"
+	statusFailed    = "failed"
 )
 
 // ErrDuplicate is returned by InitiateUpload when a match with the same content
@@ -149,7 +149,7 @@ func (s *matchService) ProcessUploadEvent(ctx context.Context, raw []byte) (Uplo
 
 	switch event.EventType {
 	case eventTypeStarted:
-		if _, err := s.repo.UpdateStatus(ctx, match.ID, statusProcessing); err != nil {
+		if _, err := s.repo.UpdateStatus(ctx, match.ID, statusUploaded); err != nil {
 			return UploadEventOutcome{}, false, err
 		}
 	case eventTypeFailed:

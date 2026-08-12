@@ -8,7 +8,7 @@ import (
 )
 
 // matchColumns is the shared column list for reading a full match row.
-const matchColumns = `id, map, played_at, uploaded_at, upload_hash, status, season_id, total_rounds, created_at, storage_key`
+const matchColumns = `id, map, played_at, upload_hash, status, season_id, total_rounds, created_at, storage_key`
 
 // MatchRepository is the persistence seam for matches. The service layer depends
 // on this interface, not on the concrete implementation, so it can be mocked in
@@ -36,8 +36,8 @@ type MatchRepository interface {
 	CurrentSeasonID(ctx context.Context) (int64, error)
 	// CreatePending inserts a new match in the 'pending' state (before upload).
 	CreatePending(ctx context.Context, uploadHash, storageKey string, seasonID int64) (*Match, error)
-	// MarkUploaded flips a match to 'uploaded' and stamps uploaded_at. The bool
-	// reports whether a matching row existed.
+	// MarkUploaded flips a match to 'uploaded'. The bool reports whether a
+	// matching row existed.
 	MarkUploaded(ctx context.Context, id int64) (bool, error)
 	// CompleteFromParse fills a match from parser output and inserts its teams +
 	// stats, all in one transaction, setting status to 'processed'. The bool
@@ -65,7 +65,7 @@ func NewMatchRepository(db *sql.DB) MatchRepository {
 func scanMatch(s interface{ Scan(...any) error }) (Match, error) {
 	var m Match
 	err := s.Scan(
-		&m.ID, &m.Map, &m.PlayedAt, &m.UploadedAt, &m.UploadHash,
+		&m.ID, &m.Map, &m.PlayedAt, &m.UploadHash,
 		&m.Status, &m.SeasonID, &m.TotalRounds, &m.CreatedAt, &m.StorageKey,
 	)
 	return m, err
@@ -198,9 +198,8 @@ func (r *sqlMatchRepository) CreatePending(ctx context.Context, uploadHash, stor
 }
 
 func (r *sqlMatchRepository) MarkUploaded(ctx context.Context, id int64) (bool, error) {
-	now := time.Now().Format(time.RFC3339)
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE matches SET status = 'uploaded', uploaded_at = ? WHERE id = ?`, now, id)
+		`UPDATE matches SET status = 'uploaded' WHERE id = ?`, id)
 	if err != nil {
 		return false, err
 	}
@@ -340,9 +339,9 @@ func (r *sqlMatchRepository) Create(ctx context.Context, nm NewMatch) (*Match, e
 	now := time.Now().Format(time.RFC3339)
 	// A generated match is already fully known, so it goes straight to 'processed'.
 	res, err := tx.ExecContext(ctx,
-		`INSERT INTO matches (map, played_at, uploaded_at, upload_hash, status, season_id, total_rounds, created_at, storage_key)
-		 VALUES (?, ?, ?, ?, 'processed', ?, ?, ?, ?)`,
-		nm.Map, nm.PlayedAt, nm.UploadedAt, nm.UploadHash, nm.SeasonID, nm.TotalRounds, now, nm.StorageKey)
+		`INSERT INTO matches (map, played_at, upload_hash, status, season_id, total_rounds, created_at, storage_key)
+		 VALUES (?, ?, ?, 'processed', ?, ?, ?, ?)`,
+		nm.Map, nm.PlayedAt, nm.UploadHash, nm.SeasonID, nm.TotalRounds, now, nm.StorageKey)
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +362,6 @@ func (r *sqlMatchRepository) Create(ctx context.Context, nm NewMatch) (*Match, e
 		ID:          matchID,
 		Map:         &nm.Map,
 		PlayedAt:    &nm.PlayedAt,
-		UploadedAt:  &nm.UploadedAt,
 		UploadHash:  nm.UploadHash,
 		Status:      "processed",
 		SeasonID:    nm.SeasonID,
@@ -391,9 +389,11 @@ func insertTeamsAndStats(ctx context.Context, tx *sql.Tx, matchID int64, teams [
 
 		for _, p := range team.Players {
 			if _, err := tx.ExecContext(ctx,
-				`INSERT INTO stats (match_id, team_id, player_id, kills, deaths, assists, kd_ratio, mvps)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-				matchID, teamID, p.PlayerID, p.Kills, p.Deaths, p.Assists, p.KDRatio, p.MVPs); err != nil {
+				`INSERT INTO stats (match_id, team_id, player_id, kills, deaths, assists, kd_ratio, mvps,
+				                    damage_assists, flash_assists, headshot_kills, total_damage, utility_damage, rounds_played)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				matchID, teamID, p.PlayerID, p.Kills, p.Deaths, p.Assists, p.KDRatio, p.MVPs,
+				p.DamageAssists, p.FlashAssists, p.HeadshotKills, p.TotalDamage, p.UtilityDamage, p.RoundsPlayed); err != nil {
 				return err
 			}
 		}
