@@ -278,7 +278,9 @@ func (r *sqlMatchRepository) GetDetailByID(ctx context.Context, id int64) (*Matc
 	// Players (joined with identity), ordered as a scoreboard by kills.
 	statRows, err := r.db.QueryContext(ctx,
 		`SELECT s.team_id, u.id, u.steam_id, u.steam_username,
-		        s.kills, s.deaths, s.assists, s.kd_ratio, s.mvps
+		        s.kills, s.deaths, s.assists, s.kd_ratio, s.mvps,
+		        s.damage_assists, s.flash_assists, s.headshot_kills,
+		        s.total_damage, s.utility_damage, s.rounds_played
 		 FROM stats s
 		 JOIN users u ON u.id = s.player_id
 		 WHERE s.match_id = ?
@@ -293,6 +295,8 @@ func (r *sqlMatchRepository) GetDetailByID(ctx context.Context, id int64) (*Matc
 		if err := statRows.Scan(
 			&teamID, &p.PlayerID, &p.SteamID, &p.SteamUsername,
 			&p.Kills, &p.Deaths, &p.Assists, &p.KDRatio, &p.MVPs,
+			&p.DamageAssists, &p.FlashAssists, &p.HeadshotKills,
+			&p.TotalDamage, &p.UtilityDamage, &p.RoundsPlayed,
 		); err != nil {
 			return nil, err
 		}

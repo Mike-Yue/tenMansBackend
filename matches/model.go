@@ -92,4 +92,10 @@ type PlayerStatDetail struct {
 	Assists       int64
 	KDRatio       float64
 	MVPs          int64
+	DamageAssists int64
+	FlashAssists  int64
+	HeadshotKills int64
+	TotalDamage   int64
+	UtilityDamage int64
+	RoundsPlayed  int64
 }

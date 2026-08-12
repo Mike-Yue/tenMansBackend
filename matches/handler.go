@@ -61,6 +61,12 @@ type PlayerStatResponse struct {
 	Assists       int64   `json:"assists"`
 	KDRatio       float64 `json:"kdRatio"`
 	MVPs          int64   `json:"mvps"`
+	DamageAssists int64   `json:"damageAssists"`
+	FlashAssists  int64   `json:"flashAssists"`
+	HeadshotKills int64   `json:"headshotKills"`
+	TotalDamage   int64   `json:"totalDamage"`
+	UtilityDamage int64   `json:"utilityDamage"`
+	RoundsPlayed  int64   `json:"roundsPlayed"`
 }
 
 // toDetailResponse maps the MatchDetail domain model onto its API DTO.
@@ -78,6 +84,12 @@ func toDetailResponse(d MatchDetail) MatchDetailResponse {
 				Assists:       p.Assists,
 				KDRatio:       p.KDRatio,
 				MVPs:          p.MVPs,
+				DamageAssists: p.DamageAssists,
+				FlashAssists:  p.FlashAssists,
+				HeadshotKills: p.HeadshotKills,
+				TotalDamage:   p.TotalDamage,
+				UtilityDamage: p.UtilityDamage,
+				RoundsPlayed:  p.RoundsPlayed,
 			})
 		}
 		teams = append(teams, TeamResponse{
