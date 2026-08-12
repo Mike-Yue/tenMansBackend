@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tenman.local/contracts/match-parser/v1/parser-event.schema.json",
+  "title": "TenMan match parser event v1",
+  "oneOf": [
+    { "$ref": "#/$defs/startedEvent" },
+    { "$ref": "#/$defs/succeededEvent" },
+    { "$ref": "#/$defs/failedEvent" }
+  ],
+  "$defs": {
+    "startedEvent": {
+      "type": "object",
+      "required": ["contractVersion", "eventType", "eventId", "occurredAt", "job", "source", "parser"],
+      "properties": {
+        "contractVersion": { "const": "1" },
+        "eventType": { "const": "parser.job.started.v1" },
+        "eventId": { "$ref": "#/$defs/digest" },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "job": { "$ref": "#/$defs/job" },
+        "source": { "$ref": "#/$defs/source" },
+        "parser": { "$ref": "#/$defs/parser" }
+      },
+      "additionalProperties": false
+    },
+    "succeededEvent": {
+      "type": "object",
+      "required": ["contractVersion", "eventType", "eventId", "occurredAt", "job", "source", "parser", "result"],
+      "properties": {
+        "contractVersion": { "const": "1" },
+        "eventType": { "const": "parser.job.succeeded.v1" },
+        "eventId": { "$ref": "#/$defs/digest" },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "job": { "$ref": "#/$defs/job" },
+        "source": { "$ref": "#/$defs/sourceWithHash" },
+        "parser": { "$ref": "#/$defs/parser" },
+        "result": { "$ref": "#/$defs/result" }
+      },
+      "additionalProperties": false
+    },
+    "failedEvent": {
+      "type": "object",
+      "required": ["contractVersion", "eventType", "eventId", "occurredAt", "job", "source", "parser", "error"],
+      "properties": {
+        "contractVersion": { "const": "1" },
+        "eventType": { "const": "parser.job.failed.v1" },
+        "eventId": { "$ref": "#/$defs/digest" },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "job": { "$ref": "#/$defs/job" },
+        "source": { "$ref": "#/$defs/source" },
+        "parser": { "$ref": "#/$defs/parser" },
+        "error": { "$ref": "#/$defs/error" }
+      },
+      "additionalProperties": false
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "job": {
+      "type": "object",
+      "required": ["uploadId", "runId"],
+      "properties": {
+        "uploadId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$" },
+        "runId": { "$ref": "#/$defs/digest" }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": ["bucket", "key", "versionId", "etag", "sizeBytes", "sha256"],
+      "properties": {
+        "bucket": { "type": "string", "minLength": 3 },
+        "key": { "type": "string", "minLength": 1 },
+        "versionId": { "type": "string", "minLength": 1 },
+        "etag": { "type": ["string", "null"] },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "sha256": {
+          "oneOf": [
+            { "$ref": "#/$defs/digest" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "sourceWithHash": {
+      "type": "object",
+      "required": ["bucket", "key", "versionId", "etag", "sizeBytes", "sha256"],
+      "properties": {
+        "bucket": { "type": "string", "minLength": 3 },
+        "key": { "type": "string", "minLength": 1 },
+        "versionId": { "type": "string", "minLength": 1 },
+        "etag": { "type": ["string", "null"] },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/digest" }
+      },
+      "additionalProperties": false
+    },
+    "parser": {
+      "type": "object",
+      "required": ["name", "version", "engine"],
+      "properties": {
+        "name": { "const": "tenman-match-parser" },
+        "version": { "type": "string", "minLength": 1 },
+        "engine": {
+          "type": "object",
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "const": "demoinfocs-golang" },
+            "version": { "const": "v5.2.0" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": ["game", "mapName", "sourceType", "durationMs", "tickRate", "teams", "rounds", "headToHead", "quality"],
+      "properties": {
+        "game": { "const": "cs2" },
+        "mapName": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+        "sourceType": { "const": "GOTV" },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "tickRate": { "type": "number", "exclusiveMinimum": 0 },
+        "teams": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/team" }
+        },
+        "rounds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/round" }
+        },
+        "headToHead": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/headToHead" }
+        },
+        "quality": { "$ref": "#/$defs/quality" }
+      },
+      "additionalProperties": false
+    },
+    "team": {
+      "type": "object",
+      "required": ["teamKey", "startingSide", "score", "players"],
+      "properties": {
+        "teamKey": { "enum": ["team-1", "team-2"] },
+        "startingSide": { "enum": ["T", "CT"] },
+        "score": { "type": "integer", "minimum": 0 },
+        "players": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/player" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "player": {
+      "type": "object",
+      "required": ["steamId", "displayName", "stats"],
+      "properties": {
+        "steamId": { "$ref": "#/$defs/steamId" },
+        "displayName": { "type": "string", "maxLength": 128 },
+        "stats": { "$ref": "#/$defs/playerStats" }
+      },
+      "additionalProperties": false
+    },
+    "steamId": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,19}$"
+    },
+    "playerStats": {
+      "type": "object",
+      "required": ["kills", "deaths", "assists", "damageAssists", "flashAssists", "headshotKills", "mvps", "totalDamage", "utilityDamage", "roundsPlayed"],
+      "properties": {
+        "kills": { "$ref": "#/$defs/count" },
+        "deaths": { "$ref": "#/$defs/count" },
+        "assists": { "$ref": "#/$defs/count" },
+        "damageAssists": { "$ref": "#/$defs/count" },
+        "flashAssists": { "$ref": "#/$defs/count" },
+        "headshotKills": { "$ref": "#/$defs/count" },
+        "mvps": { "$ref": "#/$defs/count" },
+        "totalDamage": { "$ref": "#/$defs/count" },
+        "utilityDamage": { "$ref": "#/$defs/count" },
+        "roundsPlayed": { "$ref": "#/$defs/count" }
+      },
+      "additionalProperties": false
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "round": {
+      "type": "object",
+      "required": ["roundNumber", "phase", "winnerTeamKey", "winnerSide", "endReason", "startTick", "endTick", "scoreAfter"],
+      "properties": {
+        "roundNumber": { "type": "integer", "minimum": 1 },
+        "phase": { "enum": ["REGULATION_FIRST_HALF", "REGULATION_SECOND_HALF", "OVERTIME"] },
+        "winnerTeamKey": { "enum": ["team-1", "team-2"] },
+        "winnerSide": { "enum": ["T", "CT"] },
+        "endReason": { "enum": ["TARGET_BOMBED", "BOMB_DEFUSED", "CT_WIN", "T_WIN", "TARGET_SAVED", "T_SURRENDER", "CT_SURRENDER", "DRAW", "OTHER"] },
+        "startTick": { "type": "integer", "minimum": 0 },
+        "endTick": { "type": "integer", "minimum": 0 },
+        "scoreAfter": {
+          "type": "object",
+          "required": ["team-1", "team-2"],
+          "properties": {
+            "team-1": { "$ref": "#/$defs/count" },
+            "team-2": { "$ref": "#/$defs/count" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "headToHead": {
+      "type": "object",
+      "required": ["killerSteamId", "victimSteamId", "kills"],
+      "properties": {
+        "killerSteamId": { "$ref": "#/$defs/steamId" },
+        "victimSteamId": { "$ref": "#/$defs/steamId" },
+        "kills": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "quality": {
+      "type": "object",
+      "required": ["level", "checks", "warnings"],
+      "properties": {
+        "level": { "enum": ["complete", "degraded"] },
+        "checks": { "type": "array", "items": { "$ref": "#/$defs/check" } },
+        "warnings": { "type": "array", "items": { "$ref": "#/$defs/warning" } }
+      },
+      "additionalProperties": false
+    },
+    "check": {
+      "type": "object",
+      "required": ["code", "passed"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+        "passed": { "type": "boolean" },
+        "details": { "type": "string", "maxLength": 1024 }
+      },
+      "additionalProperties": false
+    },
+    "warning": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+        "message": { "type": "string", "maxLength": 1024 },
+        "roundNumber": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": { "enum": ["OBJECT_TOO_LARGE", "UNSUPPORTED_DEMO", "CORRUPT_DEMO", "INCOMPLETE_DEMO", "RESOURCE_EXHAUSTED", "INTERNAL_ERROR"] },
+        "message": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "retryable": { "type": "boolean" },
+        "details": { "type": "object" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

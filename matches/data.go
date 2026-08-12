@@ -23,6 +23,15 @@ type MatchRepository interface {
 	// FindByHash returns the match with the given upload hash, or (nil, nil) if
 	// none exists — used for dedup at upload time.
 	FindByHash(ctx context.Context, uploadHash string) (*Match, error)
+	// FindByStorageKey returns the match with the given storage key, or (nil, nil)
+	// if none exists — used to correlate parser events to a match.
+	FindByStorageKey(ctx context.Context, storageKey string) (*Match, error)
+	// UpdateStatus sets a match's lifecycle status. The bool reports whether a
+	// matching row existed.
+	UpdateStatus(ctx context.Context, id int64, status string) (bool, error)
+	// EnsureUserBySteamID returns the internal user id for the given Steam ID,
+	// creating the Users row (with displayName) when none exists yet.
+	EnsureUserBySteamID(ctx context.Context, steamID int64, displayName string) (int64, error)
 	// CurrentSeasonID returns the season active now, falling back to the latest.
 	CurrentSeasonID(ctx context.Context) (int64, error)
 	// CreatePending inserts a new match in the 'pending' state (before upload).
@@ -98,6 +107,52 @@ func (r *sqlMatchRepository) FindByHash(ctx context.Context, uploadHash string) 
 		return nil, err
 	}
 	return &m, nil
+}
+
+func (r *sqlMatchRepository) FindByStorageKey(ctx context.Context, storageKey string) (*Match, error) {
+	m, err := scanMatch(r.db.QueryRowContext(ctx,
+		`SELECT `+matchColumns+` FROM matches WHERE storage_key = ?`, storageKey))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+func (r *sqlMatchRepository) UpdateStatus(ctx context.Context, id int64, status string) (bool, error) {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE matches SET status = ? WHERE id = ?`, status, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func (r *sqlMatchRepository) EnsureUserBySteamID(ctx context.Context, steamID int64, displayName string) (int64, error) {
+	var id int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id FROM Users WHERE steam_id = ?`, steamID).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, err
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	res, err := r.db.ExecContext(ctx,
+		`INSERT INTO Users (steam_id, steam_username, created_at) VALUES (?, ?, ?)`,
+		steamID, displayName, now)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
 }
 
 func (r *sqlMatchRepository) CurrentSeasonID(ctx context.Context) (int64, error) {

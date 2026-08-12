@@ -3,6 +3,7 @@ package matches
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -113,6 +114,7 @@ func (h *MatchHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/matches/random", h.CreateRandomMatch)
 	mux.HandleFunc("POST /api/matches/{id}/uploaded", h.MarkUploaded)
 	mux.HandleFunc("POST /api/matches/{id}/results", h.CompleteMatch)
+	mux.HandleFunc("POST /api/matches/upload", h.UploadMatch)
 	mux.HandleFunc("GET /api/matches/{matchId}", h.GetMatch)
 }
 
@@ -284,6 +286,52 @@ func (h *MatchHandler) CompleteMatch(w http.ResponseWriter, r *http.Request) {
 
 	// Return the freshly completed match with its scoreboard.
 	detail, err := h.svc.GetMatch(r.Context(), id)
+	if err != nil || detail == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeJSON(w, toDetailResponse(*detail))
+}
+
+// UploadMatch handles POST /api/matches/upload — the parser service reports a
+// job event (started/succeeded/failed) conforming to the parser-event v1
+// contract. The event is correlated to a match via source.key == storage_key.
+// A succeeded event persists teams and stats and returns the completed match;
+// started/failed update status and return 202.
+func (h *MatchHandler) UploadMatch(w http.ResponseWriter, r *http.Request) {
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	outcome, found, err := h.svc.ProcessUploadEvent(r.Context(), raw)
+	if errors.Is(err, ErrInvalidEvent) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if errors.Is(err, ErrAlreadyProcessed) {
+		http.Error(w, "match already processed", http.StatusConflict)
+		return
+	}
+	if err != nil {
+		log.Printf("process upload event: %v", err)
+		http.Error(w, "failed to process event", http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		http.Error(w, "match not found for source key", http.StatusNotFound)
+		return
+	}
+
+	if !outcome.Persisted {
+		// started/failed: acknowledged, status updated, nothing to return.
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
+	// Succeeded: return the freshly completed match with its scoreboard.
+	detail, err := h.svc.GetMatch(r.Context(), outcome.MatchID)
 	if err != nil || detail == nil {
 		w.WriteHeader(http.StatusNoContent)
 		return
