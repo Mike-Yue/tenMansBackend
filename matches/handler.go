@@ -135,6 +135,29 @@ func (h *MatchHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/matches/{id}/results", h.CompleteMatch)
 	mux.HandleFunc("POST /api/matches/upload", h.UploadMatch)
 	mux.HandleFunc("GET /api/matches/{matchId}", h.GetMatch)
+	mux.HandleFunc("DELETE /api/matches/{matchId}", h.DeleteMatch)
+}
+
+// DeleteMatch handles DELETE /api/matches/{matchId} — remove a match and its
+// teams/stats.
+func (h *MatchHandler) DeleteMatch(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("matchId"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid match id", http.StatusBadRequest)
+		return
+	}
+
+	found, err := h.svc.DeleteMatch(r.Context(), id)
+	if err != nil {
+		log.Printf("delete match %d: %v", id, err)
+		http.Error(w, "failed to delete match", http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		http.Error(w, "match not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- Upload lifecycle ---

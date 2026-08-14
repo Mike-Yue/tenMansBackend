@@ -12,6 +12,11 @@ type SeasonRepository interface {
 	List(ctx context.Context) ([]Season, error)
 	// Create inserts a season and returns it with the assigned id populated.
 	Create(ctx context.Context, name, startAt, endAt string) (*Season, error)
+	// CountMatches returns how many matches reference the given season. A non-zero
+	// count blocks deletion (matches.season_id is ON DELETE NO ACTION).
+	CountMatches(ctx context.Context, seasonID int64) (int, error)
+	// Delete removes a season by id. The bool reports whether a row existed.
+	Delete(ctx context.Context, id int64) (bool, error)
 }
 
 // sqlSeasonRepository is a SeasonRepository backed by database/sql.
@@ -60,4 +65,26 @@ func (r *sqlSeasonRepository) Create(ctx context.Context, name, startAt, endAt s
 	}
 
 	return &Season{ID: id, Name: name, StartAt: startAt, EndAt: endAt}, nil
+}
+
+func (r *sqlSeasonRepository) CountMatches(ctx context.Context, seasonID int64) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM matches WHERE season_id = ?`, seasonID).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (r *sqlSeasonRepository) Delete(ctx context.Context, id int64) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `DELETE FROM seasons WHERE id = ?`, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }

@@ -62,6 +62,8 @@ type MatchService interface {
 	// CreateRandomMatch fabricates a fully formed match (dev/testing stand-in for
 	// the real upload/parse pipeline).
 	CreateRandomMatch(ctx context.Context) (*Match, error)
+	// DeleteMatch removes a match and its teams/stats. The bool reports existence.
+	DeleteMatch(ctx context.Context, id int64) (bool, error)
 }
 
 type matchService struct {
@@ -121,6 +123,10 @@ func (s *matchService) MarkUploaded(ctx context.Context, id int64) (bool, error)
 
 func (s *matchService) CompleteMatch(ctx context.Context, id int64, pr ParseResult) (bool, error) {
 	return s.repo.CompleteFromParse(ctx, id, pr)
+}
+
+func (s *matchService) DeleteMatch(ctx context.Context, id int64) (bool, error) {
+	return s.repo.Delete(ctx, id)
 }
 
 func (s *matchService) ProcessUploadEvent(ctx context.Context, raw []byte) (UploadEventOutcome, bool, error) {

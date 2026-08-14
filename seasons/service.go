@@ -17,6 +17,10 @@ const dateLayout = "2006-01-02"
 // it to a 400 rather than a 500.
 var ErrInvalidSeason = errors.New("invalid season")
 
+// ErrSeasonReferenced is returned by DeleteSeason when matches still reference the
+// season. Handlers map it to 409.
+var ErrSeasonReferenced = errors.New("season has matches")
+
 // SeasonService holds the business logic for seasons. Handlers depend on this
 // interface rather than the concrete implementation.
 type SeasonService interface {
@@ -25,6 +29,10 @@ type SeasonService interface {
 	// ErrInvalidSeason (wrapped) when name is empty or the dates are malformed
 	// or out of order.
 	CreateSeason(ctx context.Context, name, startAt, endAt string) (*Season, error)
+	// DeleteSeason removes a season with no associated matches. The bool reports
+	// whether the season existed. Returns ErrSeasonReferenced when matches still
+	// reference it.
+	DeleteSeason(ctx context.Context, id int64) (bool, error)
 }
 
 type seasonService struct {
@@ -59,6 +67,18 @@ func (s *seasonService) CreateSeason(ctx context.Context, name, startAt, endAt s
 	}
 
 	return s.repo.Create(ctx, name, startAt, endAt)
+}
+
+func (s *seasonService) DeleteSeason(ctx context.Context, id int64) (bool, error) {
+	n, err := s.repo.CountMatches(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	if n > 0 {
+		return false, ErrSeasonReferenced
+	}
+
+	return s.repo.Delete(ctx, id)
 }
 
 // errInvalid wraps ErrInvalidSeason with a caller-facing reason, kept on one line

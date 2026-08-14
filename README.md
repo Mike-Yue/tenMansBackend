@@ -33,11 +33,14 @@ each repository → service → handler and registers routes.
 | `GET /api/users` | List all users |
 | `GET /api/users/{id}` | One user by **Steam ID** |
 | `GET /api/users/{id}/stats` | A user's aggregated all-time stats (kills, deaths, assists, mvps, winrate) |
+| `DELETE /api/users/{id}` | Delete a user by **Steam ID**. 409 if the user has any associated stats |
 | `GET /api/seasons` | List all seasons, newest first |
 | `POST /api/seasons` | Create a season. Body: `{ name, startAt, endAt }` with dates as `YYYY-MM-DD` |
+| `DELETE /api/seasons/{id}` | Delete a season. 409 if any matches reference it |
 | `GET /api/matches?season={id}` | List matches; the `season` query param is optional |
 | `POST /api/matches` | Create a match. Currently fabricates a random match (stand-in for a future demo-upload/parser pipeline) |
 | `GET /api/matches/{matchId}` | One match with both teams and every player's scoreboard |
+| `DELETE /api/matches/{matchId}` | Delete a match and its teams/stats (transactional) |
 
 ## Running locally
 

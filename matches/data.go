@@ -49,6 +49,9 @@ type MatchRepository interface {
 	// Create persists a fully formed (random) match and its teams/stats in one
 	// transaction, returning the created match.
 	Create(ctx context.Context, nm NewMatch) (*Match, error)
+	// Delete removes a match and its child rows (stats, then match_teams, then the
+	// match) in one transaction. The bool reports whether the match existed.
+	Delete(ctx context.Context, id int64) (bool, error)
 }
 
 // sqlMatchRepository is a MatchRepository backed by database/sql.
@@ -373,6 +376,39 @@ func (r *sqlMatchRepository) Create(ctx context.Context, nm NewMatch) (*Match, e
 		CreatedAt:   &now,
 		StorageKey:  nm.StorageKey,
 	}, nil
+}
+
+func (r *sqlMatchRepository) Delete(ctx context.Context, id int64) (bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	// Foreign keys are enforced (PRAGMA foreign_keys=ON), so child rows must go
+	// first: stats reference match_teams and matches, match_teams reference matches.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM stats WHERE match_id = ?`, id); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM match_teams WHERE match_id = ?`, id); err != nil {
+		return false, err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM matches WHERE id = ?`, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if n == 0 {
+		return false, nil // no such match
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // insertTeamsAndStats inserts both teams and each team's player stats for a match

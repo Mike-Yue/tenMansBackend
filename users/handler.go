@@ -2,6 +2,7 @@ package users
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -22,6 +23,33 @@ func NewUserHandler(svc UserService) *UserHandler {
 func (h *UserHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/users", h.ListUsers)
 	mux.HandleFunc("GET /api/users/{id}", h.GetUser)
+	mux.HandleFunc("DELETE /api/users/{id}", h.DeleteUser)
+}
+
+// DeleteUser handles DELETE /api/users/{id} — the {id} is the user's Steam ID.
+// Only users with no associated stats can be deleted.
+func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	steamID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid user id", http.StatusBadRequest)
+		return
+	}
+
+	found, err := h.svc.DeleteUserBySteamID(r.Context(), steamID)
+	if errors.Is(err, ErrUserReferenced) {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	if err != nil {
+		log.Printf("delete user %d: %v", steamID, err)
+		http.Error(w, "failed to delete user", http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		http.Error(w, "user not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ListUsers handles GET /api/users — list all users.

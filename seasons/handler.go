@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 )
 
 // SeasonHandler translates HTTP requests into service calls for the seasons
@@ -22,6 +23,33 @@ func NewSeasonHandler(svc SeasonService) *SeasonHandler {
 func (h *SeasonHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/seasons", h.ListSeasons)
 	mux.HandleFunc("POST /api/seasons", h.CreateSeason)
+	mux.HandleFunc("DELETE /api/seasons/{id}", h.DeleteSeason)
+}
+
+// DeleteSeason handles DELETE /api/seasons/{id} — remove a season that has no
+// associated matches.
+func (h *SeasonHandler) DeleteSeason(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid season id", http.StatusBadRequest)
+		return
+	}
+
+	found, err := h.svc.DeleteSeason(r.Context(), id)
+	if errors.Is(err, ErrSeasonReferenced) {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	if err != nil {
+		log.Printf("delete season %d: %v", id, err)
+		http.Error(w, "failed to delete season", http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		http.Error(w, "season not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ListSeasons handles GET /api/seasons — list all seasons, newest first.
