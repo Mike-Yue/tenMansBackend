@@ -7,6 +7,7 @@ import (
 
 	"tenMansBackend/db"
 	"tenMansBackend/matches"
+	"tenMansBackend/seasons"
 	"tenMansBackend/stats"
 	"tenMansBackend/users"
 )
@@ -43,6 +44,11 @@ func main() {
 	userSvc := users.NewUserService(userRepo)
 	userHandler := users.NewUserHandler(userSvc)
 	userHandler.RegisterRoutes(mux)
+
+	seasonRepo := seasons.NewSeasonRepository(database)
+	seasonSvc := seasons.NewSeasonService(seasonRepo)
+	seasonHandler := seasons.NewSeasonHandler(seasonSvc)
+	seasonHandler.RegisterRoutes(mux)
 
 	matchRepo := matches.NewMatchRepository(database)
 	matchSvc := matches.NewMatchService(matchRepo, matches.NewStubPresigner())

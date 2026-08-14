@@ -33,6 +33,8 @@ each repository → service → handler and registers routes.
 | `GET /api/users` | List all users |
 | `GET /api/users/{id}` | One user by **Steam ID** |
 | `GET /api/users/{id}/stats` | A user's aggregated all-time stats (kills, deaths, assists, mvps, winrate) |
+| `GET /api/seasons` | List all seasons, newest first |
+| `POST /api/seasons` | Create a season. Body: `{ name, startAt, endAt }` with dates as `YYYY-MM-DD` |
 | `GET /api/matches?season={id}` | List matches; the `season` query param is optional |
 | `POST /api/matches` | Create a match. Currently fabricates a random match (stand-in for a future demo-upload/parser pipeline) |
 | `GET /api/matches/{matchId}` | One match with both teams and every player's scoreboard |
