@@ -21,6 +21,12 @@ type MatchResponse struct {
 	SeasonID    int64   `json:"seasonId"`
 	TotalRounds *int64  `json:"totalRounds"`
 	CreatedAt   *string `json:"createdAt"`
+
+	// TEMPORARY: internal fields exposed for debugging only. Remove these (and the
+	// corresponding assignments in toResponse) before shipping — they leak internal
+	// storage layout and dedup state and should not be part of the public API.
+	UploadHash string `json:"uploadHash"`
+	StorageKey string `json:"storageKey"`
 }
 
 // toResponse maps the DB model onto the API DTO.
@@ -33,6 +39,9 @@ func toResponse(m Match) MatchResponse {
 		SeasonID:    m.SeasonID,
 		TotalRounds: m.TotalRounds,
 		CreatedAt:   m.CreatedAt,
+		// TEMPORARY: debug-only, remove with the DTO fields above.
+		UploadHash: m.UploadHash,
+		StorageKey: m.StorageKey,
 	}
 }
 
