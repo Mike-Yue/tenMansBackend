@@ -19,15 +19,17 @@ func main() {
 		dbPath = "production.db"
 	}
 
-	// if err := db.EnsureSeeded(dbPath); err != nil {
-	// 	log.Fatal(err)
-	// }
-
 	database, err := db.Open(dbPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer database.Close()
+
+	// Apply any pending schema migrations before serving traffic. On a fresh disk this
+	// builds the schema from scratch; on an existing database it applies only what's new.
+	if err := db.Migrate(database); err != nil {
+		log.Fatal(err)
+	}
 	log.Printf("Connected to %s", dbPath)
 
 	mux := http.NewServeMux()

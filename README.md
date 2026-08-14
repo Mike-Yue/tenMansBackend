@@ -22,7 +22,7 @@ logic, and persistence stay independent and testable:
 | `model.go` | Domain structs. |
 
 Domains: **`users`**, **`matches`**, **`stats`**. The **`db`** package handles the
-connection (`db.Open`) and one-time seeding (`db.EnsureSeeded`). `main.go` wires
+connection (`db.Open`) and schema migrations (`db.Migrate`). `main.go` wires
 each repository → service → handler and registers routes.
 
 ## Endpoints
@@ -62,14 +62,38 @@ curl -X POST http://localhost:8080/api/matches
 | `PORT` | `8080` | Port to listen on. |
 | `CORS_ALLOWED_ORIGINS` | *(unset = allow all)* | Comma-separated list of allowed browser origins, e.g. `https://tenmansfrontend.onrender.com`. |
 
-## Database & seeding
+## Database & migrations
 
-It just uses what exists in production.db, so local updates to the file will also update production. Spicy!
+The schema lives in `db/migrations/` as goose-annotated `.sql` files (embedded into the
+binary). On startup `db.Migrate` runs any not-yet-applied migrations against the database at
+`DB_PATH`, tracking what's applied in a `goose_db_version` table — so it's a no-op once the DB
+is up to date and safe to run on every boot. A fresh/empty database gets the full schema built
+from migration `00001_baseline.sql`; an existing one only gets new migrations.
+
+The `.db` file itself is **no longer committed** (it's gitignored) — it holds data only. Do not
+overwrite production's file; to change the schema, add a new migration instead.
+
+### Changing the schema
+
+Add a new numbered file, e.g. `db/migrations/00002_add_region.sql`:
+
+```sql
+-- +goose Up
+ALTER TABLE matches ADD COLUMN region TEXT;
+
+-- +goose Down
+ALTER TABLE matches DROP COLUMN region;
+```
+
+Commit and deploy; goose applies it to the live DB in place, preserving existing rows. Run the
+server locally against your dev DB to apply the same migration there. For changes SQLite's
+limited `ALTER TABLE` can't express (retyping a column, changing a CHECK constraint), use the
+create-new-table → copy → drop → rename pattern inside a single migration.
 
 ## TODO
 
 1. Steam ID Login to view the webpage
 2. S3 storage + upload path for demos
 3. Create match parser service (probably Andrew?)
-4. Implement proper DB migration and schema + add development db
+4. ~~Implement proper DB migration and schema~~ ✅ (goose migrations in `db/migrations/`) + add development db
 5. Glicko 2 elo system implementation

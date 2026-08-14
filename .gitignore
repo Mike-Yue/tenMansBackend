@@ -27,7 +27,10 @@ go.work.sum
 # env file
 .env
 
-# Local dev SQLite database and WAL sidecars (db/seed.db IS committed).
+# Local/live SQLite database and WAL sidecars. The DB is no longer committed — the
+# schema lives in db/migrations and is applied on startup, so the .db file is data-only
+# and must not be pushed (it would clobber production's live data).
+/production.db
 /production.db-wal
 /production.db-shm
 
