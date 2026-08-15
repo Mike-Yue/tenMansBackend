@@ -32,7 +32,18 @@ func (h *StatsHandler) GetUserStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := h.svc.GetPlayerStats(r.Context(), steamID)
+	// Optional ?season={id} scopes the stats to one season; omitted = all-time.
+	var seasonID *int64
+	if q := r.URL.Query().Get("season"); q != "" {
+		sid, err := strconv.ParseInt(q, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid season", http.StatusBadRequest)
+			return
+		}
+		seasonID = &sid
+	}
+
+	stats, err := h.svc.GetPlayerStats(r.Context(), steamID, seasonID)
 	if err != nil {
 		log.Printf("get stats %d: %v", steamID, err)
 		http.Error(w, "failed to get stats", http.StatusInternalServerError)
