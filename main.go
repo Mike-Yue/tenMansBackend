@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	"tenMansBackend/auth"
 	"tenMansBackend/db"
 	"tenMansBackend/matches"
 	"tenMansBackend/ratings"
@@ -46,6 +47,15 @@ func main() {
 	userHandler := users.NewUserHandler(userSvc)
 	userHandler.RegisterRoutes(mux)
 
+	// Auth: Steam OpenID sign-in. Its Middleware (wired below) gates every route
+	// except the health check and the auth endpoints themselves.
+	authCfg, err := auth.LoadConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
+	authHandler := auth.NewHandler(userSvc, authCfg)
+	authHandler.RegisterRoutes(mux)
+
 	seasonRepo := seasons.NewSeasonRepository(database)
 	seasonSvc := seasons.NewSeasonService(seasonRepo)
 	seasonHandler := seasons.NewSeasonHandler(seasonSvc)
@@ -76,7 +86,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:    ":" + port,
-		Handler: corsMiddleware(mux),
+		Handler: corsMiddleware(authHandler.Middleware(mux)),
 	}
 
 	log.Printf("Server listening on :%s", port)
