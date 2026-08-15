@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"strings"
 )
 
 type contextKey string
@@ -11,20 +12,18 @@ type contextKey string
 // steamIDContextKey holds the authenticated SteamID injected by Middleware.
 const steamIDContextKey contextKey = "steamID"
 
-// publicPaths are reachable without a session: the health check plus the login
-// initiation, OpenID callback, and logout (which must work regardless of session
-// state). Everything else requires authentication.
+// publicPaths are reachable without a token: the health check plus the login
+// initiation and OpenID callback. Everything else requires authentication.
 var publicPaths = map[string]bool{
 	"/healthz":                 true,
 	"/api/auth/steam/login":    true,
 	"/api/auth/steam/callback": true,
-	"/api/auth/logout":         true,
 }
 
 // Middleware gates every route. A request passes when it targets a public path,
 // presents the parser shared secret (machine-to-machine callers), or carries a
-// valid session cookie; otherwise it gets 401. On success for a cookie-based
-// request the authenticated SteamID is stored in the request context.
+// valid bearer token; otherwise it gets 401. On success for a token-based request
+// the authenticated SteamID is stored in the request context.
 func (h *Handler) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if publicPaths[r.URL.Path] {
@@ -40,7 +39,7 @@ func (h *Handler) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		steamID, ok := h.cfg.readSession(r)
+		steamID, ok := h.authenticate(r)
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -49,6 +48,17 @@ func (h *Handler) Middleware(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), steamIDContextKey, steamID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// authenticate extracts and verifies the bearer token from the Authorization
+// header, returning the SteamID it encodes.
+func (h *Handler) authenticate(r *http.Request) (int64, bool) {
+	const prefix = "Bearer "
+	authz := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authz, prefix) {
+		return 0, false
+	}
+	return h.cfg.parseSession(strings.TrimPrefix(authz, prefix))
 }
 
 // steamIDFromContext returns the SteamID that Middleware stored for an

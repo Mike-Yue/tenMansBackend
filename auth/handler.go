@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
 
 	"tenMansBackend/users"
 )
@@ -20,31 +21,35 @@ func NewHandler(userSvc users.UserService, cfg *Config) *Handler {
 	return &Handler{cfg: cfg, userSvc: userSvc}
 }
 
-// RegisterRoutes wires the auth endpoints onto the given mux. login, callback,
-// and logout are public (see publicPaths in the middleware); me is protected, so
-// a 401 there is the frontend's "not signed in" signal.
+// RegisterRoutes wires the auth endpoints onto the given mux. login and callback
+// are public (see publicPaths in the middleware); me is protected, so a 401 there
+// is the frontend's "not signed in" signal. There is no server-side logout:
+// tokens are stateless, so the frontend logs out by discarding its token.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/auth/steam/login", h.Login)
 	mux.HandleFunc("GET /api/auth/steam/callback", h.Callback)
 	mux.HandleFunc("GET /api/auth/me", h.Me)
-	mux.HandleFunc("POST /api/auth/logout", h.Logout)
 }
 
 // Login handles GET /api/auth/steam/login — redirect the browser to Steam's
-// OpenID login. realm/return_to are built from the configured public origin.
+// OpenID login. realm/return_to are built from this backend's own public origin,
+// because the callback lands here on the backend (not the frontend).
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	returnTo := h.cfg.AppBaseURL + "/api/auth/steam/callback"
-	url := steamLoginRedirectURL(returnTo, h.cfg.AppBaseURL)
+	returnTo := h.cfg.BackendURL + "/api/auth/steam/callback"
+	url := steamLoginRedirectURL(returnTo, h.cfg.BackendURL)
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
-// Callback handles GET /api/auth/steam/callback — verify Steam's assertion, set
-// the session cookie, and redirect back to the app.
+// Callback handles GET /api/auth/steam/callback — verify Steam's assertion, sign
+// a session token, and redirect back to the frontend with the token in the URL
+// fragment (`#token=...`). A fragment is not sent to servers, so the token stays
+// out of access logs and Referer headers.
 func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 	// Rebuild the verification URL from the configured public origin rather than
-	// r.Host: behind the frontend's rewrite proxy r.Host is the backend's host,
-	// but Steam signed the assertion against the frontend origin in return_to.
-	fullURL := h.cfg.AppBaseURL + r.URL.RequestURI()
+	// r.Host: behind Render's TLS-terminating load balancer r.Host/scheme aren't
+	// the public https origin, but Steam signed the assertion against BackendURL
+	// in return_to.
+	fullURL := h.cfg.BackendURL + r.URL.RequestURI()
 
 	steamID, err := verifySteamLogin(fullURL)
 	if err != nil {
@@ -53,8 +58,8 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.cfg.setSessionCookie(w, steamID)
-	http.Redirect(w, r, h.cfg.AppBaseURL+"/", http.StatusFound)
+	token := h.cfg.issueToken(steamID)
+	http.Redirect(w, r, h.cfg.FrontendURL+"/#token="+url.QueryEscape(token), http.StatusFound)
 }
 
 // meResponse is the payload for GET /api/auth/me. SteamID serializes as a bare
@@ -65,9 +70,9 @@ type meResponse struct {
 }
 
 // Me handles GET /api/auth/me — return the signed-in user's identity. The
-// middleware guarantees a session here (otherwise it returns 401), so the SteamID
-// is always present in context. The username is filled in only when this Steam
-// user already has a player row (from match ingestion); pure viewers have none.
+// middleware guarantees a valid token here (otherwise it returns 401), so the
+// SteamID is always present in context. The username is filled in only when this
+// Steam user already has a player row (from match ingestion); pure viewers have none.
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	steamID, ok := steamIDFromContext(r.Context())
 	if !ok {
@@ -86,11 +91,4 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Printf("encode me: %v", err)
 	}
-}
-
-// Logout handles POST /api/auth/logout — clear the session cookie. Safe to call
-// whether or not a valid session exists.
-func (h *Handler) Logout(w http.ResponseWriter, _ *http.Request) {
-	h.cfg.clearSessionCookie(w)
-	w.WriteHeader(http.StatusNoContent)
 }

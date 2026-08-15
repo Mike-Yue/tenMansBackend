@@ -8,8 +8,8 @@ import (
 func testConfig() *Config {
 	return &Config{
 		SessionSecret: []byte("test-secret-key"),
-		AppBaseURL:    "http://localhost:5173",
-		CookieSecure:  false,
+		FrontendURL:   "http://localhost:5173",
+		BackendURL:    "http://localhost:8080",
 		SessionTTL:    time.Hour,
 	}
 }
