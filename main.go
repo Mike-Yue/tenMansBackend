@@ -7,6 +7,7 @@ import (
 
 	"tenMansBackend/db"
 	"tenMansBackend/matches"
+	"tenMansBackend/ratings"
 	"tenMansBackend/seasons"
 	"tenMansBackend/stats"
 	"tenMansBackend/users"
@@ -50,8 +51,15 @@ func main() {
 	seasonHandler := seasons.NewSeasonHandler(seasonSvc)
 	seasonHandler.RegisterRoutes(mux)
 
+	// Ratings are constructed before matches so the match service can call back
+	// into them to recompute a season after a match is added or removed.
+	ratingRepo := ratings.NewRatingRepository(database)
+	ratingSvc := ratings.NewRatingService(ratingRepo, ratings.NewOpenSkillEngine())
+	ratingHandler := ratings.NewRatingHandler(ratingSvc)
+	ratingHandler.RegisterRoutes(mux)
+
 	matchRepo := matches.NewMatchRepository(database)
-	matchSvc := matches.NewMatchService(matchRepo, matches.NewStubPresigner())
+	matchSvc := matches.NewMatchService(matchRepo, matches.NewStubPresigner(), ratingSvc)
 	matchHandler := matches.NewMatchHandler(matchSvc)
 	matchHandler.RegisterRoutes(mux)
 

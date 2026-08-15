@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 )
 
 // Match lifecycle status values stored in the matches.status column. These must
@@ -66,15 +67,36 @@ type MatchService interface {
 	DeleteMatch(ctx context.Context, id int64) (bool, error)
 }
 
+// SeasonRecomputer rebuilds a season's derived data (player ratings) after its
+// processed-match set changes. Implemented by the ratings service and injected in
+// main.go. A nil recomputer disables the hook (ratings can always be rebuilt via
+// POST /api/ratings/recompute).
+type SeasonRecomputer interface {
+	RecomputeSeason(ctx context.Context, seasonID int64) error
+}
+
 type matchService struct {
-	repo      MatchRepository
-	presigner Presigner
+	repo       MatchRepository
+	presigner  Presigner
+	recomputer SeasonRecomputer
 }
 
 // NewMatchService returns a MatchService backed by the given repository and
-// presigner.
-func NewMatchService(repo MatchRepository, presigner Presigner) MatchService {
-	return &matchService{repo: repo, presigner: presigner}
+// presigner. recomputer may be nil to disable rating recomputation.
+func NewMatchService(repo MatchRepository, presigner Presigner, recomputer SeasonRecomputer) MatchService {
+	return &matchService{repo: repo, presigner: presigner, recomputer: recomputer}
+}
+
+// recompute rebuilds ratings for a season after a match change. Failures are
+// logged, not returned: ratings are derived data and the underlying match
+// mutation has already succeeded.
+func (s *matchService) recompute(ctx context.Context, seasonID int64) {
+	if s.recomputer == nil {
+		return
+	}
+	if err := s.recomputer.RecomputeSeason(ctx, seasonID); err != nil {
+		log.Printf("recompute ratings for season %d: %v", seasonID, err)
+	}
 }
 
 func (s *matchService) ListMatches(ctx context.Context, seasonID *int64) ([]Match, error) {
@@ -122,11 +144,28 @@ func (s *matchService) MarkUploaded(ctx context.Context, id int64) (bool, error)
 }
 
 func (s *matchService) CompleteMatch(ctx context.Context, id int64, pr ParseResult) (bool, error) {
-	return s.repo.CompleteFromParse(ctx, id, pr)
+	found, err := s.repo.CompleteFromParse(ctx, id, pr)
+	if err != nil || !found {
+		return found, err
+	}
+	if seasonID, ok, err := s.repo.SeasonIDForMatch(ctx, id); err == nil && ok {
+		s.recompute(ctx, seasonID)
+	}
+	return true, nil
 }
 
 func (s *matchService) DeleteMatch(ctx context.Context, id int64) (bool, error) {
-	return s.repo.Delete(ctx, id)
+	// Capture the season before deleting so we can rebuild its ratings afterward.
+	seasonID, hadSeason, _ := s.repo.SeasonIDForMatch(ctx, id)
+
+	found, err := s.repo.Delete(ctx, id)
+	if err != nil || !found {
+		return found, err
+	}
+	if hadSeason {
+		s.recompute(ctx, seasonID)
+	}
+	return true, nil
 }
 
 func (s *matchService) ProcessUploadEvent(ctx context.Context, raw []byte) (UploadEventOutcome, bool, error) {
@@ -172,6 +211,7 @@ func (s *matchService) ProcessUploadEvent(ctx context.Context, raw []byte) (Uplo
 		if _, err := s.repo.CompleteFromParse(ctx, match.ID, pr); err != nil {
 			return UploadEventOutcome{}, false, err
 		}
+		s.recompute(ctx, match.SeasonID)
 		return UploadEventOutcome{MatchID: match.ID, Persisted: true}, true, nil
 	}
 
@@ -189,5 +229,10 @@ func (s *matchService) CreateRandomMatch(ctx context.Context) (*Match, error) {
 			playersPerTeam*2, len(playerIDs))
 	}
 
-	return s.repo.Create(ctx, generateRandomMatch(playerIDs))
+	match, err := s.repo.Create(ctx, generateRandomMatch(playerIDs))
+	if err != nil {
+		return nil, err
+	}
+	s.recompute(ctx, match.SeasonID)
+	return match, nil
 }

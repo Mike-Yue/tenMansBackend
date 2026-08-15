@@ -52,6 +52,9 @@ type MatchRepository interface {
 	// Delete removes a match and its child rows (stats, then match_teams, then the
 	// match) in one transaction. The bool reports whether the match existed.
 	Delete(ctx context.Context, id int64) (bool, error)
+	// SeasonIDForMatch returns the season a match belongs to. The bool reports
+	// whether the match existed.
+	SeasonIDForMatch(ctx context.Context, id int64) (int64, bool, error)
 }
 
 // sqlMatchRepository is a MatchRepository backed by database/sql.
@@ -409,6 +412,19 @@ func (r *sqlMatchRepository) Delete(ctx context.Context, id int64) (bool, error)
 		return false, err
 	}
 	return true, nil
+}
+
+func (r *sqlMatchRepository) SeasonIDForMatch(ctx context.Context, id int64) (int64, bool, error) {
+	var seasonID int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT season_id FROM matches WHERE id = ?`, id).Scan(&seasonID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return seasonID, true, nil
 }
 
 // insertTeamsAndStats inserts both teams and each team's player stats for a match

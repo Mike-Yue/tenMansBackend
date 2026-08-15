@@ -34,6 +34,7 @@ each repository → service → handler and registers routes.
 | `GET /api/users/{id}` | One user by **Steam ID** |
 | `GET /api/users/{id}/stats` | A user's aggregated all-time stats (kills, deaths, assists, mvps, winrate) |
 | `DELETE /api/users/{id}` | Delete a user by **Steam ID**. 409 if the user has any associated stats |
+| `GET /api/users/{id}/ratings` | A user's per-season skill rating (OpenSkill), by **Steam ID** |
 | `GET /api/seasons` | List all seasons, newest first |
 | `POST /api/seasons` | Create a season. Body: `{ name, startAt, endAt }` with dates as `YYYY-MM-DD` |
 | `DELETE /api/seasons/{id}` | Delete a season. 409 if any matches reference it |
@@ -41,6 +42,7 @@ each repository → service → handler and registers routes.
 | `POST /api/matches` | Create a match. Currently fabricates a random match (stand-in for a future demo-upload/parser pipeline) |
 | `GET /api/matches/{matchId}` | One match with both teams and every player's scoreboard |
 | `DELETE /api/matches/{matchId}` | Delete a match and its teams/stats (transactional) |
+| `POST /api/ratings/recompute` | Rebuild every season's player ratings from match history (backfill/repair) |
 
 ## Running locally
 
@@ -95,10 +97,25 @@ server locally against your dev DB to apply the same migration there. For change
 limited `ALTER TABLE` can't express (retyping a column, changing a CHECK constraint), use the
 create-new-table → copy → drop → rename pattern inside a single migration.
 
+## Player ratings
+
+Per-season skill ratings live in the `ratings` package and the `player_ratings` table.
+Ratings are **recomputed from a season's full match history** (deterministic; immune to
+match/user deletes) and rewritten whenever that season's processed-match set changes — the
+match service calls back into the ratings service after create/complete/delete. Use
+`POST /api/ratings/recompute` to backfill a fresh database or repair after manual edits.
+
+The algorithm is **OpenSkill** (Weng-Lin, `github.com/intinig/go-openskill`), rank-based
+(win/loss/draw; round margin is not considered). The algorithm is isolated behind the
+`RatingEngine` interface (`ratings/engine.go`): to swap it (Glicko-2, per-round, performance-
+weighted, …), add a new `engine_*.go` implementing `Compute`, then change the one line in
+`main.go` (`ratings.NewOpenSkillEngine()`). Persistence, endpoints, triggers, and the frontend
+are engine-agnostic. Display scaling (`ratingBase`/`ratingScale`) is tunable in `ratings/service.go`.
+
 ## TODO
 
 1. Steam ID Login to view the webpage
 2. S3 storage + upload path for demos
 3. Create match parser service (probably Andrew?)
 4. ~~Implement proper DB migration and schema~~ ✅ (goose migrations in `db/migrations/`) + add development db
-5. Glicko 2 elo system implementation
+5. ~~Glicko 2 elo system implementation~~ ✅ (OpenSkill per-season ratings; swappable via `RatingEngine`)
