@@ -67,6 +67,7 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 type meResponse struct {
 	SteamID       int64   `json:"steamId"`
 	SteamUsername *string `json:"steamUsername"`
+	AvatarURL     *string `json:"avatarUrl"`
 }
 
 // Me handles GET /api/auth/me — return the signed-in user's identity. The
@@ -81,14 +82,19 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := meResponse{SteamID: steamID}
-	// Prefer the live Steam display name (requires STEAM_API_KEY); otherwise fall
-	// back to a stored username, then to null (the frontend shows the SteamID).
-	if name := h.cfg.steamPersonaName(steamID); name != "" {
-		resp.SteamUsername = &name
+	// Prefer the live Steam profile (requires STEAM_API_KEY): its display name,
+	// falling back to a stored username, then to null (the frontend shows the
+	// SteamID); plus the avatar when available.
+	profile := h.cfg.steamProfileFor(steamID)
+	if profile.Name != "" {
+		resp.SteamUsername = &profile.Name
 	} else if user, err := h.userSvc.GetUserBySteamID(r.Context(), steamID); err != nil {
 		log.Printf("me lookup %d: %v", steamID, err)
 	} else if user != nil {
 		resp.SteamUsername = user.SteamUsername
+	}
+	if profile.Avatar != "" {
+		resp.AvatarURL = &profile.Avatar
 	}
 
 	w.Header().Set("Content-Type", "application/json")
