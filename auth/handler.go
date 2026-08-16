@@ -81,7 +81,11 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := meResponse{SteamID: steamID}
-	if user, err := h.userSvc.GetUserBySteamID(r.Context(), steamID); err != nil {
+	// Prefer the live Steam display name (requires STEAM_API_KEY); otherwise fall
+	// back to a stored username, then to null (the frontend shows the SteamID).
+	if name := h.cfg.steamPersonaName(steamID); name != "" {
+		resp.SteamUsername = &name
+	} else if user, err := h.userSvc.GetUserBySteamID(r.Context(), steamID); err != nil {
 		log.Printf("me lookup %d: %v", steamID, err)
 	} else if user != nil {
 		resp.SteamUsername = user.SteamUsername

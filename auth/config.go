@@ -25,6 +25,10 @@ type Config struct {
 	// realm/return_to and to reconstruct the callback URL for verification
 	// (rather than trusting r.Host behind Render's load balancer). No trailing slash.
 	BackendURL string
+	// SteamAPIKey is a Steam Web API key (https://steamcommunity.com/dev/apikey).
+	// Optional: when set, /api/auth/me resolves the SteamID to a display name.
+	// When empty, callers fall back to the numeric SteamID.
+	SteamAPIKey string
 	// SessionTTL is how long an issued token stays valid.
 	SessionTTL time.Duration
 }
@@ -53,6 +57,7 @@ func LoadConfig() (*Config, error) {
 		SessionSecret: []byte(secret),
 		FrontendURL:   frontendURL,
 		BackendURL:    backendURL,
+		SteamAPIKey:   os.Getenv("STEAM_API_KEY"),
 		SessionTTL:    30 * 24 * time.Hour,
 	}, nil
 }
